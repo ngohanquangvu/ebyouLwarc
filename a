@@ -1,0 +1,316 @@
+list_data = []
+list_proxy = []
+def convert_date_format(date_str):
+    date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+    formatted_date = date_obj.strftime("%d-%m-%Y")
+    return formatted_date
+
+def get_info(id_channel):
+    global list_proxy
+    if len(list_proxy) > 0:
+        pr = random.choice(list_proxy)
+        p = {
+        "http":f"http://{pr}",
+        "https":f"http://{pr}",
+        }
+    else:
+        p = None
+    while True:
+        try:
+            a = requests.get(f"https://mixerno.space/api/youtube-channel-counter/user/{id_channel}",proxies=p).json()
+            for i in a["counts"]:
+                if i["value"] == "subscribers":
+                    sub = i["count"]
+                if i["value"] == "apiviews":
+                    view = i["count"]
+            for i in a["user"]:
+                if i["value"] == "name":
+                    name = i["count"]
+            return sub, name, view
+        except Exception as e:
+            print(str(e))
+            continue
+queue_detail = []
+status_crawl_detail = False
+
+def load_file():
+    global list_data
+    try:
+        file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+        list_url = [i.strip("\n") for i in open(file_path, "r").readlines()]
+        status_var.set("Status: Ready - Log: Load File thành công")
+        list_data+=list_url
+    except: 
+        status_var.set("Status: Ready - Log: File không hợp lệ")
+def start():
+    global video_data, queue_detail, status_crawl_detail, list_data, list_proxy
+    if len(list_proxy) >0:
+        pr = random.choice(list_proxy)
+        p = {
+        "http":f"http://{pr}",
+        "https":f"http://{pr}",
+        }
+    else: p = None
+    print(p)
+    print(list_data)
+    def run():
+        status_var.set("Status: Running - Log: None")
+        status_crawl_detail = True
+        stt_data = 1
+        crawl_detail_channel()
+        print(list_data)
+        for i in list_data:
+            print(f"Processing {i}")
+            channel_id = get_id_channel(i)
+            sub,name,view = get_info(channel_id)
+            print(f"Sub: {sub}, Name: {name}, View: {view}, URL: {i}")
+            video_links= crawl_video_youtube(channel_id)
+            url = i
+            video = len(video_links)
+            newest = video_links[0].split("https://www.youtube.com/watch?v=")[1]
+            newest = convert_date_format(requests.get(f"https://api.subscribercounter.nl/api/youtube/videos/info/{newest}",proxies=p).json()["results"][0]["publishedAt"].split("T")[0])
+            oldest = video_links[-1].split("https://www.youtube.com/watch?v=")[1]
+            oldest = convert_date_format(requests.get(f"https://api.subscribercounter.nl/api/youtube/videos/info/{oldest}", proxies=p).json()["results"][0]["publishedAt"].split("T")[0])
+            add_data_to_table(url,name,sub,video,view,newest,oldest)
+            queue_detail.append([video_links, stt_data])
+            stt_data+=1
+        status_crawl_detail = "Done"
+    t = threading.Thread(target=run)
+    t.start()
+
+complete_detail = []
+
+def crawl_detail_channel():
+    global list_proxy
+    if len(list_proxy) >0:
+        pr = random.choice(list_proxy)
+        p = {
+        "http":f"http://{pr}",
+        "https":f"http://{pr}",
+        }
+    else: p = None
+    global video_data, queue_detail, detail_window_opened, complete_detail
+    def runn(video_links, stt_data):
+            print("Running detail data {}".format(stt_data))
+            stt=1
+            video_data.append([])
+            temp_data = []
+            for j in video_links:
+                id_video = j.split("https://www.youtube.com/watch?v=")[1]
+                while True:
+                    try:
+                        data = requests.get(f"https://returnyoutubedislikeapi.com/votes?videoId={id_video}",proxies=p).json()
+                        commentCount = requests.get(f"https://api.subscribercounter.nl/api/youtube/videos/info/{id_video}", proxies=p).json()["results"][0]
+                        if detail_window_opened == True:
+                            temp_data.append([str(stt), commentCount["title"], j, convert_date_format(commentCount["publishedAt"].split("T")[0]), data["viewCount"], data["likes"], data["dislikes"], commentCount["comments"]])
+                        else:
+                            if len(temp_data) > 0:
+                                video_data[stt_data].extend(temp_data)
+                                temp_data = []
+                            video_data[stt_data].append([str(stt), commentCount["title"], j, convert_date_format(commentCount["publishedAt"].split("T")[0]), data["viewCount"], data["likes"], data["dislikes"], commentCount["comments"]])
+                        stt+=1
+                        break
+                    except Exception as e:
+                        print(str(e))
+                        continue
+            if len(temp_data) > 0:
+                video_data[stt_data].extend(temp_data)
+            complete_detail.append(stt_data)
+            print("Done detail data {}".format(stt_data))
+    def append_threads():
+        global status_crawl_detail
+        while True:
+            dem_link = 0
+            if queue_detail:
+                video_links, stt_data = queue_detail.pop(0)
+                dem_link+=1
+                tt = threading.Thread(target=runn, args=(video_links, stt_data,))
+                tt.start()
+            else:
+                if status_crawl_detail == "Done": 
+                    if len(complete_detail) == dem_link:
+                        status_crawl_detail = False
+                        status_var.set("Status: Done - Log: None")
+                    break
+                continue
+    t = threading.Thread(target=append_threads)
+    t.start()
+
+def get_id_channel(data):
+        try:
+            a = requests.get(data).text
+            if ("https://www.youtube.com/channel/" in a) == False: open("Result.txt", "a", encoding="utf-8").write(f"Lỗi channel\n {a}\n")
+            return a.split('https://www.youtube.com/channel/')[1].split('"')[0]
+        except: 
+            return None 
+    
+def crawl_video_youtube(channel_id):
+    video_links = []
+    total_view = 0
+    videos = scrapetube.get_channel(channel_id)
+    for i in videos:
+        video_links.append(f"https://www.youtube.com/watch?v={i['videoId']}")
+    return video_links
+
+def add_data_to_table(url,name,sub,video,view,newest,oldest):
+    # Dummy data for demonstration
+    channel_info = {
+        "STT": len(tree.get_children()) + 1,
+        "URL": url,
+        "Tên kênh": name,
+        "Subscribe": sub,
+        "SL Video":  video,
+        "Tổng view": view,
+        "Video mới nhất": newest,
+        "Video cũ nhất":  oldest
+    }
+    tree.insert("", "end", values=(
+        channel_info["STT"],
+        channel_info["URL"],
+        channel_info["Tên kênh"],
+        channel_info["Subscribe"],
+        channel_info["SL Video"],
+        channel_info["Tổng view"],
+        channel_info["Video mới nhất"],
+        channel_info["Video cũ nhất"]
+    ))
+
+def update_table():
+    pass
+
+video_data = [[]]
+detail_window_opened = False
+
+def on_double_click(event):
+    global video_data
+    detail_window_opened = True
+    item = tree.selection()[0]
+    values = tree.item(item, "values")
+    if values:
+        stt = values[0]  # Lấy giá trị của cột "STT"
+        print(f"Double clicked on item {stt}")
+        open_detail_window(video_data[int(stt)], values)
+        tree.selection_remove(item)
+
+def open_detail_window(data,channel_info):
+    detail_window = tk.Toplevel(root)
+    detail_window.title(f"Details for {channel_info[2]}")
+
+    columns = ("STT", "Tên video", "URL", "Ngày đăng", "View", "Like", "Unlike", "Bình luận")
+    detail_tree = ttk.Treeview(detail_window, columns=columns, show="headings")
+    for col in columns:
+        detail_tree.heading(col, text=col)
+        detail_tree.column(col, width=100)
+
+    detail_tree.pack(fill=tk.BOTH, expand=True)
+
+    for video in data:
+        detail_tree.insert("", "end", values=video)
+
+# Tạo cửa sổ chính
+
+sort_states = {}
+
+def sort_column(tree, col, reverse):
+    # Lấy tất cả các giá trị hiện tại trong Treeview
+    data = [(tree.set(child, col), child) for child in tree.get_children('')]
+    # Sắp xếp dữ liệu
+    data.sort(reverse=reverse)
+    # Sắp xếp lại các hàng trong Treeview
+    for index, (val, child) in enumerate(data):
+        tree.move(child, '', index)
+    # Cập nhật trạng thái sắp xếp
+    sort_states[col] = not reverse
+
+def on_column_click(event):
+    region = tree.identify("region", event.x, event.y)
+    if region == "heading":
+        col = tree.identify_column(event.x)[1:]
+        col = int(col) - 1  # Chuyển đổi từ chuỗi thành số và điều chỉnh chỉ số
+        col_name = columns[col]
+        reverse = sort_states.get(col_name, False)
+        sort_column(tree, col_name, reverse)
+def load_gg_sheet():
+    global list_data
+    def runn():
+        global list_data
+        url = url_gg_sheet.get()
+        url = f"{url}/gviz/tq?tqx=out:csv"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.content.decode('utf-8')
+                csv_data = csv.reader(StringIO(data))
+                
+                # In dữ liệu
+                data = []
+                for row in csv_data:
+                    data.append(row[1])
+                list_data = data[1:]
+                print(list_data)
+                status_var.set("Status: Ready - Log: Load Google Sheet thành công") 
+            else:
+                status_var.set("Status: Ready - Log: Url Google Sheet không hợp lệ")
+        except:
+            status_var.set("Status: Ready - Log: Url Google Sheet không hợp lệ")
+    t = threading.Thread(target=runn)
+    t.start()
+def load_proxy():
+    global list_proxy
+    try:
+        file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+        list_proxy = [i.strip("\n") for i in open(file_path, "r").readlines()]
+        status_var.set("Status: Ready - Log: Load Proxy thành công")
+    except: 
+        status_var.set("Status: Ready - Log: File Proxy không hợp lệ")
+
+
+root = tk.Tk()
+root.title("YouTube Channel Info")
+
+columns = ("STT", "URL", "Tên kênh", "Subscribe", "SL Video", "Tổng view", "Video mới nhất", "Video cũ nhất")
+tree = ttk.Treeview(root, columns=columns, show="headings")
+style = ttk.Style()
+style.theme_use("default")
+style.configure("Treeview.Heading", background="#00ff00", foreground="#000000")
+for col in columns:
+    tree.heading(col, text=col)
+    tree.column(col, width=100)  # Điều chỉnh độ rộng của từng cột
+
+
+tree.grid(row=0, column=0, columnspan=3, sticky="nsew")
+tree.bind("<Double-1>", on_double_click)
+tree.bind("<Button-1>", on_column_click)
+
+# Tạo khung cho các nút và ô nhập liệu
+frame = tk.Frame(root)
+frame.grid(row=1, column=0, columnspan=3, sticky="ew")
+
+start_button = tk.Button(frame, text="Start", command=start, bg="#ff0000", fg="#ffffff")
+start_button.grid(row=0, column=0, padx=5, pady=5)
+
+# Nút load file
+load_button = tk.Button(frame, text="Load File", command=load_file, bg="#ff0000", fg="#ffffff")
+load_button.grid(row=0, column=1, padx=5, pady=5)
+
+# Nút update
+update_button = tk.Button(frame, text="Load Proxy", command=load_proxy, bg="#ff0000", fg="#ffffff")
+update_button.grid(row=0, column=2, padx=5, pady=5)
+
+gg_sheet_button = tk.Button(frame, text="Load Google Sheet", command=load_gg_sheet, bg="#ff0000", fg="#ffffff")
+gg_sheet_button.grid(row=0, column=3, padx=5, pady=5)
+url_gg_sheet = tk.Entry(frame)
+url_gg_sheet.grid(row=0, column=4, padx=5, pady=5)
+
+# Trạng thái
+status_var = tk.StringVar()
+status_label = tk.Label(frame, textvariable=status_var)
+status_label.grid(row=0, column=5, columnspan=3)
+status_var.set("Status: Ready - Log: None")
+
+# Đặt lại cấu hình lưới để mở rộng
+root.grid_columnconfigure(1, weight=1)
+root.grid_rowconfigure(0, weight=1)
+
+# Chạy ứng dụng
+root.mainloop()
