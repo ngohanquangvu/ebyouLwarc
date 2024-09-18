@@ -266,7 +266,7 @@ def load_proxy():
 
 
 root = tk.Tk()
-root.title("YouTube Channel Info")
+root.title("CzP Check Youtube")
 
 columns = ("STT", "URL", "Tên kênh", "Subscribe", "SL Video", "Tổng view", "Video mới nhất", "Video cũ nhất")
 tree = ttk.Treeview(root, columns=columns, show="headings")
