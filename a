@@ -53,13 +53,14 @@ def start():
     else: p = None
     print(p)
     print(list_data)
+    list_url = list(set(list_data))
     def run():
         status_var.set("Status: Running - Log: None")
         status_crawl_detail = True
         stt_data = 1
         crawl_detail_channel()
-        print(list_data)
-        for i in list_data:
+        print(list_url)
+        for i in list_url:
             print(f"Processing {i}")
             channel_id = get_id_channel(i)
             sub,name,view = get_info(channel_id)
@@ -101,15 +102,21 @@ def crawl_detail_channel():
                     try:
                         data = requests.get(f"https://returnyoutubedislikeapi.com/votes?videoId={id_video}",proxies=p).json()
                         commentCount = requests.get(f"https://api.subscribercounter.nl/api/youtube/videos/info/{id_video}", proxies=p).json()["results"][0]
-                        if detail_window_opened == True:
-                            temp_data.append([str(stt), commentCount["title"], j, convert_date_format(commentCount["publishedAt"].split("T")[0]), data["viewCount"], data["likes"], data["dislikes"], commentCount["comments"]])
-                        else:
-                            if len(temp_data) > 0:
-                                video_data[stt_data].extend(temp_data)
-                                temp_data = []
-                            video_data[stt_data].append([str(stt), commentCount["title"], j, convert_date_format(commentCount["publishedAt"].split("T")[0]), data["viewCount"], data["likes"], data["dislikes"], commentCount["comments"]])
-                        stt+=1
-                        break
+                        try:
+                            try:
+                                sl_cmt = commentCount["comments"]
+                            except: sl_cmt = 0
+                            if detail_window_opened == True:
+                                temp_data.append([str(stt), commentCount["title"], j, convert_date_format(commentCount["publishedAt"].split("T")[0]), data["viewCount"], data["likes"], data["dislikes"], sl_cmt])
+                            else:
+                                if len(temp_data) > 0:
+                                    video_data[stt_data].extend(temp_data)
+                                    temp_data = []
+                                video_data[stt_data].append([str(stt), commentCount["title"], j, convert_date_format(commentCount["publishedAt"].split("T")[0]), data["viewCount"], data["likes"], data["dislikes"], sl_cmt])
+                            stt+=1
+                            break
+                        except Exception as e:
+                            continue
                     except Exception as e:
                         print(str(e))
                         continue
@@ -192,17 +199,49 @@ def on_double_click(event):
         open_detail_window(video_data[int(stt)], values)
         tree.selection_remove(item)
 
+
 def open_detail_window(data,channel_info):
+    sort_states_details = {}
+    def sort_detail_column(tree, col, reverse):
+        # Lấy tất cả các giá trị hiện tại trong Treeview
+        data = [(tree.set(child, col), child) for child in tree.get_children('')]
+
+        # Hàm để chuyển đổi giá trị thành số nguyên nếu có thể, nếu không thì giữ nguyên
+        def convert(value):
+            try:
+                return int(value)
+            except ValueError:
+                return value
+
+        # Sắp xếp dữ liệu, sử dụng hàm convert để chuyển đổi giá trị
+        data.sort(key=lambda x: convert(x[0]), reverse=reverse)
+
+        # Sắp xếp lại các hàng trong Treeview
+        for index, (val, child) in enumerate(data):
+            tree.move(child, '', index)
+
+        # Cập nhật trạng thái sắp xếp
+        sort_states_details[col] = not reverse
+
+    def on_detail_column_click(event):
+        region = detail_tree.identify("region", event.x, event.y)
+        if region == "heading":
+            col = detail_tree.identify_column(event.x)[1:]
+            col = int(col) - 1  # Chuyển đổi từ chuỗi thành số và điều chỉnh chỉ số
+            col_name = detail_columns[col]
+            reverse = sort_states.get(col_name, False)
+            sort_detail_column(detail_tree, col_name, reverse)
     detail_window = tk.Toplevel(root)
     detail_window.title(f"Details for {channel_info[2]}")
 
-    columns = ("STT", "Tên video", "URL", "Ngày đăng", "View", "Like", "Unlike", "Bình luận")
-    detail_tree = ttk.Treeview(detail_window, columns=columns, show="headings")
-    for col in columns:
+    detail_columns = ("STT", "Tên video", "URL", "Ngày đăng", "View", "Like", "Unlike", "Bình luận")
+    detail_tree = ttk.Treeview(detail_window, columns=detail_columns, show="headings")
+    for col in detail_columns:
         detail_tree.heading(col, text=col)
         detail_tree.column(col, width=100)
 
     detail_tree.pack(fill=tk.BOTH, expand=True)
+    detail_tree.bind("<Button-1>", on_detail_column_click)
 
     for video in data:
         detail_tree.insert("", "end", values=video)
@@ -214,14 +253,23 @@ sort_states = {}
 def sort_column(tree, col, reverse):
     # Lấy tất cả các giá trị hiện tại trong Treeview
     data = [(tree.set(child, col), child) for child in tree.get_children('')]
-    # Sắp xếp dữ liệu
-    data.sort(reverse=reverse)
+
+    # Hàm để chuyển đổi giá trị thành số nguyên nếu có thể, nếu không thì giữ nguyên
+    def convert(value):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+
+    # Sắp xếp dữ liệu, sử dụng hàm convert để chuyển đổi giá trị
+    data.sort(key=lambda x: convert(x[0]), reverse=reverse)
+
     # Sắp xếp lại các hàng trong Treeview
     for index, (val, child) in enumerate(data):
         tree.move(child, '', index)
+
     # Cập nhật trạng thái sắp xếp
     sort_states[col] = not reverse
-
 def on_column_click(event):
     region = tree.identify("region", event.x, event.y)
     if region == "heading":
